@@ -53,8 +53,8 @@ st.title("📚 내 방구석 비밀 책장")
 font_size = st.slider("글자 크기 조절 (pt)", min_value=14, max_value=30, value=16, step=1)
 st.write("---")
 
-# 👑 [전면 개정] 파이썬 격리 벽을 깨부수고, 모든 처리를 스마트폰 본체 내부에서 처리하는 단일 엔진
-st.markdown("""
+# 👑 파이썬과 자바스크립트 문자열 충돌을 해결하기 위해 r"""을 사용하여 안전하게 감싸줌
+st.markdown(r"""
 <label for="hidden-uploader" class="custom-upload-btn" id="upload-label">
     📁 여기에 txt 파일을 올리면 책장에 등록됩니다 (연속 가능)
 </label>
@@ -103,7 +103,7 @@ st.markdown("""
 (function() {
     const win = window.top || window;
     
-    // 1. 파일 업로드 직접 처리 (파이썬 무시하고 폰에 다이렉트 저장)
+    // 1. 파일 업로드 직접 처리 (폰에 다이렉트 저장)
     window.handleFileUpload = function(input) {
         const file = input.files[0];
         if (!file) return;
@@ -113,7 +113,114 @@ st.markdown("""
         
         const reader = new FileReader();
         
-        // 인코딩 자동 감지 기능 탑재 (UTF-8 및 한국어 기동)
         reader.onload = function(e) {
             let text = e.target.result;
             const fileName = file.name;
+            
+            // 스마트폰 로컬 저장소에 다이렉트 영구 저장
+            localStorage.setItem("novel_file_" + fileName, text);
+            
+            let list = JSON.parse(localStorage.getItem("novel_list_v13")) || [];
+            if (!list.includes(fileName)) {
+                list.push(fileName);
+                localStorage.setItem("novel_list_v13", JSON.stringify(list));
+            }
+            
+            input.value = "";
+            label.innerText = "📁 여기에 txt 파일을 올리면 책장에 등록됩니다 (연속 가능)";
+            
+            renderBookshelf();
+        };
+        
+        reader.readAsText(file, "UTF-8");
+    };
+
+    // 2. 책장 목록 화면에 그리기
+    window.renderBookshelf = function() {
+        const list = JSON.parse(localStorage.getItem("novel_list_v13")) || [];
+        const container = document.getElementById("bookshelf-container");
+        
+        if (list.length === 0) {
+            container.innerHTML = '<div style="color:#888; text-align:center; padding:20px; border:1px dashed #ddd; border-radius:6px;">책장이 비어 있습니다. 위의 업로드 칸에 소설을 올려 채워보세요!</div>';
+            return;
+        }
+        
+        let html = '<table style="width:100%; border-collapse:collapse; margin-top:10px;">';
+        list.forEach((title) => {
+            html += `
+            <tr style="border-bottom:1px solid #eef0f2;">
+                <td style="padding:12px 5px;" class="novel-title-text">📄 ${title}</td>
+                <td style="text-align:right; padding:12px 5px; white-space:nowrap;">
+                    <button onclick="loadNovel('${title}')" class="resume-btn">▶ 이어 읽기</button>
+                    <button onclick="deleteNovel('${title}')" class="del-btn">❌</button>
+                </td>
+            </tr>`;
+        });
+        html += '</table>';
+        container.innerHTML = html;
+    };
+
+    // 3. 소설 본문 열기 및 스크롤 자동 복원
+    window.loadNovel = function(title) {
+        const content = localStorage.getItem("novel_file_" + title);
+        if (!content) return;
+        
+        localStorage.setItem("novel_current_v13", title);
+        
+        document.getElementById("reading-title").innerText = "📖 현재 읽는 중: " + title;
+        const bodyArea = document.getElementById("novel-body-text");
+        bodyArea.innerText = content;
+        
+        // 슬라이더 바 값 추출하여 실시간 폰트 크기 변경
+        try {
+            const sliderText = parent.document.querySelector('.stSlider').innerText;
+            const match = sliderText.match(/\d+/);
+            if(match) bodyArea.style.fontSize = match[0] + "px";
+        } catch(e) {
+            bodyArea.style.fontSize = "16px";
+        }
+        
+        document.getElementById("novel-display-section").style.display = "block";
+        
+        // 읽던 스크롤 좌표로 자동 차원 이동
+        setTimeout(() => {
+            const savedY = localStorage.getItem("novel_scroll_" + title);
+            if (savedY) win.scrollTo(0, parseInt(savedY));
+        }, 80);
+    };
+
+    // 4. 본문 닫기
+    window.closeNovel = function() {
+        localStorage.removeItem("novel_current_v13");
+        document.getElementById("novel-display-section").style.display = "none";
+        win.scrollTo(0, 0);
+    };
+
+    // 5. 책장에서 제거
+    window.deleteNovel = function(title) {
+        if (confirm("이 소설을 책장에서 영구히 삭제할까요?")) {
+            let list = JSON.parse(localStorage.getItem("novel_list_v13")) || [];
+            list = list.filter(t => t !== title);
+            localStorage.setItem("novel_list_v13", JSON.stringify(list));
+            localStorage.removeItem("novel_file_" + title);
+            localStorage.removeItem("novel_scroll_" + title);
+            
+            if (localStorage.getItem("novel_current_v13") === title) {
+                localStorage.removeItem("novel_current_v13");
+                document.getElementById("novel-display-section").style.display = "none";
+            }
+            renderBookshelf();
+        }
+    };
+
+    // 6. 사용자가 읽으면서 내리는 스크롤 실시간 위치 기억
+    win.addEventListener('scroll', () => {
+        const currentTitle = localStorage.getItem("novel_current_v13");
+        if (currentTitle) {
+            localStorage.setItem("novel_scroll_" + currentTitle, win.scrollY);
+        }
+    }, { passive: true });
+
+    // 처음 앱 실행 시 세팅 구동
+    setTimeout(() => {
+        render

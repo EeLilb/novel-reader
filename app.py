@@ -4,7 +4,6 @@ import json
 
 st.set_page_config(page_title="방구석 소설 뷰어", layout="centered")
 
-# 1. 외부 플러그인 설치 없이 Streamlit 내부 컴포넌트 조합으로 안전하게 데이터 송수신 통로 개설
 # CSS: 미색 테마 및 드래그/복사/우클릭 완벽 금지
 st.markdown("""
     <style>
@@ -38,7 +37,7 @@ if 'my_bookshelf' not in st.session_state:
 if 'now_reading' not in st.session_state:
     st.session_state['now_reading'] = None
 
-# 2. 고정된 업로드 칸 (무조건 최상단 노출)
+# 1. 고정된 업로드 칸 (무조건 최상단 노출)
 uploaded_file = st.file_uploader("여기에 txt 파일을 올리면 책장에 등록됩니다.", type="txt", key="novel_uploader")
 
 file_name = ""
@@ -51,51 +50,46 @@ if uploaded_file is not None:
     except UnicodeDecodeError:
         content = bytes_data.decode("cp949", errors="ignore")
     
-    # [수정] 파일 올리면 메모리에만 넣고 '현재 읽는 소설(now_reading)'은 공백으로 둠 -> 즉시 띄우지 않음!
     st.session_state['my_bookshelf'][file_name] = content
     
-    # 폰 내부 저장소에도 영구 저장 백업
+    # 폰 내부 저장소(localStorage)에 영구 보관
     escaped_content = content.replace("`", "\\`").replace("$", "\\$")
     st.markdown(f"""
         <script>
         (function() {{
             const win = window.top || window;
-            let db = JSON.parse(win.localStorage.getItem("v6_shelf_db")) || {{}};
+            let db = JSON.parse(win.localStorage.getItem("v8_shelf_db")) || {{}};
             db["{file_name}"] = `{escaped_content}`;
-            win.localStorage.setItem("v6_shelf_db", JSON.stringify(db));
-            win.localStorage.setItem("v6_scroll_" + "{file_name}", "0");
+            win.localStorage.setItem("v8_shelf_db", JSON.stringify(db));
+            win.localStorage.setItem("v8_scroll_" + "{file_name}", "0");
         }})();
         </script>
     """, unsafe_allow_html=True)
     
-    # 파일 업로더 즉시 비워주기 (연속 업로드 가능)
     del st.session_state["novel_uploader"]
     st.rerun()
 
-# 3. [보안 돌파 최신 브릿지] 가상 앱 차단에 걸리지 않는 숨겨진 안전 데이터 전송용 입력창
-# 브라우저가 일반 타이핑으로 인식하게 만들어 절대 포맷되지 않습니다.
-js_receiver = st.text_input("bridge_v6", label_visibility="collapsed", key="bridge_v6_input")
+# 2. 안전 데이터 전송 백엔드 브릿지
+js_receiver = st.text_input("bridge_v8", label_visibility="collapsed", key="bridge_v8_input")
 
 if js_receiver:
     try:
         parsed_data = json.loads(js_receiver)
         st.session_state['my_bookshelf'] = parsed_data.get('db', {})
-        # 껐다 켰을 때, 이전에 선택해서 읽고 있던 소설 제목이 있다면 복원
         if st.session_state['now_reading'] is None:
             st.session_state['now_reading'] = parsed_data.get('current', None)
     except:
         pass
 
-# 폰에 저장된 목록 데이터를 안전하게 파이썬으로 밀어넣어주는 자바스크립트 엔진
 st.markdown("""
     <script>
     (function() {
         const win = window.top || window;
-        const localDb = win.localStorage.getItem("v6_shelf_db");
-        const localCur = win.localStorage.getItem("v6_current_read");
+        const localDb = win.localStorage.getItem("v8_shelf_db");
+        const localCur = win.localStorage.getItem("v8_current_read");
         
         setTimeout(() => {
-            const bridge = parent.document.querySelector('input[aria-label="bridge_v6"]');
+            const bridge = parent.document.querySelector('input[aria-label="bridge_v8"]');
             if (bridge && !bridge.value && localDb) {
                 bridge.value = JSON.stringify({
                     db: JSON.parse(localDb),
@@ -109,8 +103,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# 4. 책장 목록 화면에 그리기
-st.write("### 📖 나의 책장 목록")
+# 3. [구조 업데이트] 책장 목록 칸 나누기 UI (소설이름 / 이어 읽기 / 닫기 및 삭제)
+st.write("### 📖 나의 소설 목록")
 shelf = st.session_state['my_bookshelf']
 now_read = st.session_state['now_reading']
 
@@ -118,22 +112,51 @@ if not shelf:
     st.info("책장이 비어 있습니다. 위의 업로드 칸에 소설을 올려 채워보세요!")
 else:
     for title in list(shelf.keys()):
-        col1, col2 = st.columns([6, 1])
+        # 가로 칸을 나누어 기능 배치
+        col1, col2, col3, col4 = st.columns([3.5, 2, 1, 1])
+        
+        # [📄 소설이름] 버튼
         is_active = (title == now_read)
         lbl = f"▶ {title}" if is_active else f"📄 {title}"
-        
-        # 목록에서 소설을 직접 '터치'해야만 본문이 열리도록 설정
-        if col1.button(lbl, key=f"shelf_{title}"):
+        if col1.button(lbl, key=f"title_{title}"):
             st.session_state['now_reading'] = title
             st.markdown(f"""
                 <script>
-                (window.top || window).localStorage.setItem("v6_current_read", "{title}");
+                (window.top || window).localStorage.setItem("v8_current_read", "{title}");
                 </script>
             """, unsafe_allow_html=True)
             st.rerun()
             
-        # 삭제 기능
-        if col2.button("❌", key=f"kill_{title}"):
+        # [⚡ 이어 읽기] 버튼
+        if col2.button("⚡ 이어 읽기", key=f"resume_{title}"):
+            st.session_state['now_reading'] = title
+            st.markdown(f"""
+                <script>
+                (window.top || window).localStorage.setItem("v8_current_read", "{title}");
+                setTimeout(() => {{
+                    const win = window.top || window;
+                    const savedY = win.localStorage.getItem("v8_scroll_{title}");
+                    if (savedY) win.scrollTo(0, parseInt(savedY));
+                }}, 100);
+                </script>
+            """, unsafe_allow_html=True)
+            st.rerun()
+            
+        # 👑 [수정] 현재 읽고 있는 소설일 때만 [접기(닫기)] 버튼 노출, 아니면 빈칸
+        if is_active:
+            if col3.button("🙈 닫기", key=f"close_{title}"):
+                st.session_state['now_reading'] = None
+                st.markdown(f"""
+                    <script>
+                    (window.top || window).localStorage.removeItem("v8_current_read");
+                    </script>
+                """, unsafe_allow_html=True)
+                st.rerun()
+        else:
+            col3.write("") # 빈 공간 유지
+
+        # [❌ 삭제] 버튼
+        if col4.button("❌", key=f"kill_{title}"):
             del st.session_state['my_bookshelf'][title]
             if st.session_state['now_reading'] == title:
                 st.session_state['now_reading'] = None
@@ -142,9 +165,9 @@ else:
             st.markdown(f"""
                 <script>
                 const win = window.top || window;
-                win.localStorage.setItem("v6_shelf_db", `{db_json}`);
-                if(win.localStorage.getItem("v6_current_read") === "{title}") {{
-                    win.localStorage.removeItem("v6_current_read");
+                win.localStorage.setItem("v8_shelf_db", `{db_json}`);
+                if(win.localStorage.getItem("v8_current_read") === "{title}") {{
+                    win.localStorage.removeItem("v8_current_read");
                 }}
                 window.location.reload();
                 </script>
@@ -153,20 +176,19 @@ else:
 
 st.write("---")
 
-# 5. 본문 노출 구역 및 이어읽기 스크롤 가동
-# 사용자가 고르기 전(now_read가 None일 때)에는 본문 영역을 절대 띄우지 않고 대기합니다.
+# 4. 소설 본문 노출 구역 (선택하기 전이나 [닫기]를 누르면 절대 뜨지 않음)
 if now_read and now_read in shelf:
     st.write(f"#### 📖 현재 읽는 중: {now_read}")
     st.markdown(f'<div id="novel-view" class="novel-text" style="font-size: {font_size}px;">{shelf[now_read]}</div>', unsafe_allow_html=True)
     
-    # 실시간 스크롤 트래킹 및 복원 엔진
+    # 실시간 스크롤 트래킹 및 백업 엔진
     js_scroll = f"""
     <script>
     (function() {{
-        const scrollKey = "v6_scroll_" + "{now_read}";
+        const scrollKey = "v8_scroll_" + "{now_read}";
         const win = window.top || window;
 
-        // 예전 위치로 화면 이동
+        // 본문이 새로 열렸을 때 스크롤 복원
         setTimeout(() => {{
             const savedY = win.localStorage.getItem(scrollKey);
             if (savedY && parseInt(savedY) > 0) {{
@@ -174,7 +196,7 @@ if now_read and now_read in shelf:
             }}
         }}, 250);
 
-        // 스크롤 할 때마다 위치 기억
+        // 사용자가 스크롤 할 때마다 위치 기억
         win.addEventListener('scroll', () => {{
             win.localStorage.setItem(scrollKey, win.scrollY);
         }}, {{ passive: true }});
@@ -183,4 +205,4 @@ if now_read and now_read in shelf:
     """
     st.markdown(js_scroll, unsafe_allow_html=True)
 else:
-    st.write("<div style='text-align:center; color:#999; margin-top:30px;'>책장에서 읽을 소설을 터치해 주세요.</div>", unsafe_allow_html=True)
+    st.write("<div style='text-align:center; color:#999; margin-top:30px;'>책장에서 읽을 소설의 제목이나 [이어 읽기]를 터치해 주세요.</div>", unsafe_allow_html=True)

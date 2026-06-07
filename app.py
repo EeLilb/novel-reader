@@ -23,12 +23,25 @@ st.markdown("""
     .novel-title-text {
         font-size: 16px;
         font-weight: bold;
-        line-height: 2.2;
         color: #333333;
     }
-    div[data-testid="stColumn"] {
-        display: flex;
-        align-items: center;
+    /* 커스텀 업로드 버튼 스타일 */
+    .custom-upload-btn {
+        display: block;
+        width: 100%;
+        padding: 15px;
+        background-color: #ffffff;
+        border: 2px dashed #bdc3c7;
+        border-radius: 8px;
+        text-align: center;
+        cursor: pointer;
+        font-weight: bold;
+        margin-bottom: 20px;
+        color: #555;
+    }
+    .custom-upload-btn:hover {
+        background-color: #f8f9fa;
+        border-color: #3498db;
     }
     </style>
     <script>
@@ -40,49 +53,48 @@ st.title("📚 내 방구석 비밀 책장")
 font_size = st.slider("글자 크기 조절 (pt)", min_value=14, max_value=30, value=16, step=1)
 st.write("---")
 
-# 1. 파일 업로드 칸 (상시 노출 및 연속 추가 가능)
-uploaded_file = st.file_uploader("여기에 txt 파일을 올리면 책장에 등록됩니다.", type="txt", key="novel_uploader")
-
-if uploaded_file is not None:
-    file_name = uploaded_file.name
-    try:
-        bytes_data = uploaded_file.getvalue()
-        content = bytes_data.decode("utf-8")
-    except UnicodeDecodeError:
-        content = bytes_data.decode("cp949", errors="ignore")
-    
-    # 🌟 [서버 귀속 탈피] 서버가 아닌 폰 하드웨어 영구 기억 장치에 즉시 박아버립니다.
-    escaped_content = content.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-    st.markdown(f"""
-        <script>
-        (function() {{
-            const win = window.top || window;
-            localStorage.setItem("novel_file_" + "{file_name}", `{escaped_content}`);
-            
-            // 파일 목록 리스트 업데이트
-            let list = JSON.parse(localStorage.getItem("novel_list_v12")) || [];
-            if (!list.includes("{file_name}")) {{
-                list.push("{file_name}");
-                localStorage.setItem("novel_list_v12", JSON.stringify(list));
-            }}
-            
-            // 새로고침하여 목록에 즉시 반영
-            win.location.reload();
-        }})();
-        </script>
-    """, unsafe_allow_html=True)
-
-st.write("### 📖 나의 소설 목록")
-
-# 2. 👑 [핵심] 서버 메모리를 쓰지 않고, 폰 저장소에서 실시간으로 목록과 본문을 제어하는 자바스크립트 엔진
-# 이 방식을 쓰면 서버가 꺼지든 켜지든 내 폰이 기억장치가 되므로 절대 데이터가 안 지워집니다.
+# 👑 [전면 개정] 파이썬 격리 벽을 깨부수고, 모든 처리를 스마트폰 본체 내부에서 처리하는 단일 엔진
 st.markdown("""
+<label for="hidden-uploader" class="custom-upload-btn" id="upload-label">
+    📁 여기에 txt 파일을 올리면 책장에 등록됩니다 (연속 가능)
+</label>
+<input type="file" id="hidden-uploader" accept=".txt" style="display:none;" onchange="handleFileUpload(this)">
+
+<style>
+.close-btn {
+    padding: 6px 12px;
+    background-color: #e0e0e0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+.resume-btn {
+    padding: 6px 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+.del-btn {
+    padding: 6px 10px;
+    background-color: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+</style>
+
 <div id="bookshelf-container">목록을 불러오는 중입니다...</div>
+
 <div id="novel-display-section" style="display:none; margin-top:30px;">
     <hr>
-    <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
         <h4 id="reading-title" style="margin:0;">📖 현재 읽는 중</h4>
-        <button onclick="closeNovel()" style="padding:6px 12px; background:#e0e0e0; border:none; border-radius:4px; cursor:pointer;">🙈 독서 종료 (닫기)</button>
+        <button onclick="closeNovel()" class="close-btn">🙈 독서 종료 (닫기)</button>
     </div>
     <div id="novel-body-text" class="novel-text"></div>
 </div>
@@ -91,96 +103,17 @@ st.markdown("""
 (function() {
     const win = window.top || window;
     
-    // 화면 그리기 함수
-    window.renderBookshelf = function() {
-        const list = JSON.parse(localStorage.getItem("novel_list_v12")) || [];
-        const container = document.getElementById("bookshelf-container");
+    // 1. 파일 업로드 직접 처리 (파이썬 무시하고 폰에 다이렉트 저장)
+    window.handleFileUpload = function(input) {
+        const file = input.files[0];
+        if (!file) return;
         
-        if (list.length === 0) {
-            container.innerHTML = '<div style="color:#888; text-align:center; padding:20px;">책장이 비어 있습니다. 위의 업로드 칸에 소설을 올려 채워보세요!</div>';
-            return;
-        }
+        const label = document.getElementById("upload-label");
+        label.innerText = "⚡ 소설 분석 및 책장 등록 중...";
         
-        let html = '<table style="width:100%; border-collapse:collapse;">';
-        list.forEach((title, idx) => {
-            html += `
-            <tr style="border-bottom:1px solid #ddd;">
-                <td style="padding:10px 0;" class="novel-title-text">📄 ${title}</td>
-                <td style="text-align:right; padding:10px 0;">
-                    <button onclick="loadNovel('${title}')" style="padding:6px 12px; background:#4CAF50; color:white; border:none; border-radius:4px; margin-right:5px; cursor:pointer;">▶ 이어 읽기</button>
-                    <button onclick="deleteNovel('${title}')" style="padding:6px 10px; background:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">❌</button>
-                </td>
-            </tr>`;
-        });
-        html += '</table>';
-        container.innerHTML = html;
-    };
-
-    // 소설 본문 불러오기 및 스크롤 복원
-    window.loadNovel = function(title) {
-        const content = localStorage.getItem("novel_file_" + title);
-        if (!content) return;
+        const reader = new FileReader();
         
-        localStorage.setItem("novel_current_v12", title);
-        
-        document.getElementById("reading-title").innerText = "📖 현재 읽는 중: " + title;
-        const bodyArea = document.getElementById("novel-body-text");
-        bodyArea.innerText = content;
-        
-        // 글자 크기 실시간 동기화 적용
-        const slider = parent.document.querySelector('div[data-testid="stSlider"] input');
-        if(slider) {
-            bodyArea.style.fontSize = parent.document.querySelector('.stSlider').innerText.match(/\\d+pt/)?.[0] || "16px";
-        }
-        
-        document.getElementById("novel-display-section").style.display = "block";
-        
-        // 읽던 위치로 자동 스크롤 점프
-        setTimeout(() => {
-            const savedY = localStorage.getItem("novel_scroll_" + title);
-            if (savedY) win.scrollTo(0, parseInt(savedY));
-        }, 100);
-    };
-
-    // 닫기 기능
-    window.closeNovel = function() {
-        localStorage.removeItem("novel_current_v12");
-        document.getElementById("novel-display-section").style.display = "none";
-        win.scrollTo(0, 0);
-    };
-
-    // 삭제 기능
-    window.deleteNovel = function(title) {
-        if (confirm("이 소설을 책장에서 삭제할까요?")) {
-            let list = JSON.parse(localStorage.getItem("novel_list_v12")) || [];
-            list = list.filter(t => t !== title);
-            localStorage.setItem("novel_list_v12", JSON.stringify(list));
-            localStorage.removeItem("novel_file_" + title);
-            localStorage.removeItem("novel_scroll_" + title);
-            
-            if (localStorage.getItem("novel_current_v12") === title) {
-                localStorage.removeItem("novel_current_v12");
-                document.getElementById("novel-display-section").style.display = "none";
-            }
-            renderBookshelf();
-        }
-    };
-
-    // 스크롤 할 때마다 실시간 위치를 폰에 기억
-    win.addEventListener('scroll', () => {
-        const currentTitle = localStorage.getItem("novel_current_v12");
-        if (currentTitle) {
-            localStorage.setItem("novel_scroll_" + currentTitle, win.scrollY);
-        }
-    }, { passive: true });
-
-    // 실행 시 목록 렌더링 및 읽던 소설 자동 복원
-    setTimeout(() => {
-        renderBookshelf();
-        const cur = localStorage.getItem("novel_current_v12");
-        if (cur) loadNovel(cur);
-    }, 200);
-
-})();
-</script>
-""", unsafe_allow_html=True)
+        // 인코딩 자동 감지 기능 탑재 (UTF-8 및 한국어 기동)
+        reader.onload = function(e) {
+            let text = e.target.result;
+            const fileName = file.name;

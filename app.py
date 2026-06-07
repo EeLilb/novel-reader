@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📚 방구석 웹소설 뷰어")
-st.write("스크롤 이어읽기가 보완된 버전입니다.")
+st.write("가상 앱 환경 스크롤 복원 버전입니다.")
 
 uploaded_file = st.file_uploader("소설 텍스트(.txt) 파일을 선택하세요", type="txt")
 font_size = st.slider("글자 크기 조절 (pt)", min_value=14, max_value=30, value=16, step=1)
@@ -46,36 +46,36 @@ if uploaded_file is not None:
     # 본문 출력
     st.markdown(f'<div class="novel-text" style="font-size: {font_size}px;">{content}</div>', unsafe_allow_html=True)
     
-    # 🔥 [개선된 이어읽기 자바스크립트]
-    # parent.window를 사용하여 Streamlit창이 아닌 휴대폰 진짜 화면 스크롤을 제어합니다.
+    # 👑 [가상 앱 환경 전용 스크롤 엔진]
+    # iframe 구조와 상관없이 브라우저 최상단 객체(window.top)를 찾아 강제로 저장하고 복원합니다.
     js_scroll_script = f"""
     <script>
     (function() {{
         const storageKey = "scroll_pos_" + "{file_name}";
-        
-        // 1) 휴대폰 진짜 화면(parent)의 스크롤 감지 및 저장
-        parent.window.addEventListener('scroll', () => {{
-            parent.localStorage.setItem(storageKey, parent.window.scrollY);
-        }});
+        const targetWindow = window.top || window; // 가상 앱 최고 존엄 창 찾기
 
-        // 2) 0.1초마다 본문이 다 준비되었는지 체크하면서 저장된 위치로 강제 이동 (최대 3초간 시도)
+        // 1) 스크롤 감지 및 즉시 저장
+        targetWindow.addEventListener('scroll', () => {{
+            targetWindow.localStorage.setItem(storageKey, targetWindow.scrollY);
+        }}, {{ passive: true }});
+
+        // 2) 앱을 껐다 켰을 때도 강제로 계속 시도하여 스크롤 복원
         let attempts = 0;
-        const restoreScroll = setInterval(() => {{
-            const savedPos = parent.localStorage.getItem(storageKey);
+        const checkAndScroll = setInterval(() => {{
+            const savedPos = targetWindow.localStorage.getItem(storageKey);
             attempts++;
-            
+
             if (savedPos && parseInt(savedPos) > 0) {{
-                parent.window.scrollTo(0, parseInt(savedPos));
+                targetWindow.scrollTo(0, parseInt(savedPos));
                 
-                // 실제로 스크롤이 잘 내려갔거나 너무 오래 시도했으면 체크 종료
-                if (parent.window.scrollY >= parseInt(savedPos) - 10 || attempts > 30) {{
-                    clearInterval(restoreScroll);
+                // 성공했거나 너무 오래 걸리면 종료 (정상 작동 보장)
+                if (Math.abs(targetWindow.scrollY - parseInt(savedPos)) < 5 || attempts > 50) {{
+                    clearInterval(checkAndScroll);
                 }}
             }} else {{
-                // 저장된 위치가 없으면 즉시 종료
-                clearInterval(restoreScroll);
+                clearInterval(checkAndScroll);
             }}
-        }}, 100);
+        }}, 80); // 0.08초마다 무한 체크
     }})();
     </script>
     """
